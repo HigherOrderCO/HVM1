@@ -114,9 +114,39 @@ fn parse_bool(text: &str) -> Result<bool, String> {
 }
 
 fn load_code(file: &str) -> Result<String, String> {
+  use std::collections::HashSet;
+  use std::path::Path;
+
+  fn loader(file: &str, visited: &mut HashSet<String>, result: &mut String) -> Result<(), String> {
+    let canonical_path = std::fs::canonicalize(file).map_err(|e| format!("Failed to canonicalize path {}: {}", file, e))?;
+    let canonical_file = canonical_path.to_str().ok_or_else(|| format!("Invalid UTF-8 in path: {:?}", canonical_path))?;
+
+    if !visited.insert(canonical_file.to_string()) {
+      return Ok(()); // File already processed, skip
+    }
+
+    let text = std::fs::read_to_string(file).map_err(|e| format!("Failed to read file {}: {}", file, e))?;
+
+    for line in text.lines() {
+      if line.trim().starts_with("import ") {
+        let import_file = line.trim()[7..].trim();
+        let import_path = Path::new(file).parent().unwrap_or_else(|| Path::new("")).join(import_file);
+        loader(import_path.to_str().unwrap(), visited, result)?;
+      } else {
+        result.push_str(line);
+        result.push('\n');
+      }
+    }
+
+    Ok(())
+  }
+
   if file.is_empty() {
-    return Ok(String::new());
+    Ok(String::new())
   } else {
-    return std::fs::read_to_string(file).map_err(|err| err.to_string());
+    let mut visited = HashSet::new();
+    let mut result = String::new();
+    loader(file, &mut visited, &mut result)?;
+    Ok(result)
   }
 }
