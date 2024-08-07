@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 // A RuleBook is a file ready for compilation. It includes:
 // - rule_group: sanitized rules grouped by function
+// - name_count: number of unique names generated
+// - id_to_smap: maps ctr ids to strictness maps
 // - id_to_name: maps ctr ids to names
 // - name_to_id: maps ctr names to ids
 // - ctr_is_fun: true if a ctr is used as a function
@@ -18,6 +20,7 @@ pub struct RuleBook {
   pub name_count: u64,
   pub name_to_id: HashMap<String, u64>,
   pub id_to_smap: HashMap<u64, Vec<bool>>,
+  pub id_to_pmap: HashMap<u64, Vec<bool>>,
   pub id_to_name: HashMap<u64, String>,
   pub ctr_is_fun: HashMap<String, bool>,
 }
@@ -31,6 +34,7 @@ pub fn new_rulebook() -> RuleBook {
     name_count: 0,
     name_to_id: HashMap::new(),
     id_to_smap: HashMap::new(),
+    id_to_pmap: HashMap::new(),
     id_to_name: HashMap::new(),
     ctr_is_fun: HashMap::new(),
   };
@@ -39,6 +43,7 @@ pub fn new_rulebook() -> RuleBook {
     book.name_to_id.insert(precomp.name.to_string(), precomp.id);
     book.id_to_name.insert(precomp.id, precomp.name.to_string());
     book.id_to_smap.insert(precomp.id, precomp.smap.to_vec());
+    book.id_to_pmap.insert(precomp.id, precomp.pmap.to_vec());
     book.ctr_is_fun.insert(precomp.name.to_string(), precomp.funs.is_some());
   }
   return book;
@@ -96,6 +101,17 @@ pub fn add_group(book: &mut RuleBook, name: &str, group: &RuleGroup) {
             }
           }
         }
+        // Registers pmap
+        match book.id_to_pmap.get(&id) {
+          None => {
+            book.id_to_pmap.insert(id, vec![false; args.len()]);
+          }
+          Some(pmap) => {
+            if pmap.len() != args.len() {
+              panic!("inconsistent arity on: '{}'", term);
+            }
+          }
+        }
         // Force strictness when pattern-matching
         if lhs_top {
           for i in 0 .. args.len() {
@@ -107,6 +123,17 @@ pub fn add_group(book: &mut RuleBook, name: &str, group: &RuleGroup) {
             };
             if is_strict {
               book.id_to_smap.get_mut(&id).unwrap()[i] = true;
+            }
+          }
+        }
+        // Flags superposition arguments
+        if lhs_top {
+          for i in 0 .. args.len() {
+            if let language::syntax::Term::Ctr { ref name, .. } = *args[i] {
+              if name == "HVM.SUP" {
+                book.id_to_pmap.get_mut(&id).unwrap()[i] = true;
+                //println!("sup! {} {} {}", name, i, &args[i]);
+              }
             }
           }
         }
@@ -282,7 +309,7 @@ pub fn sanitize_rule(rule: &language::syntax::Rule) -> Result<language::syntax::
           }
         } else {
           // create a var with the name generated before
-          // concatenated with '.{{times_used}}'
+          // concatenated with '.<<times_used>>'
           if let Some(name) = tbl.get(name) {
             let used = { *ctx.uses.entry(name.clone()).and_modify(|x| *x += 1).or_insert(1) };
             let name = format!("{}.{}", name, used - 1);

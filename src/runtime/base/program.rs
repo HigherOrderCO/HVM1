@@ -59,6 +59,7 @@ pub type ApplyFun = fn(ReduceCtx) -> bool;
 pub struct VisitObj {
   pub strict_map: Vec<bool>,
   pub strict_idx: Vec<u64>,
+  pub superp_map: Vec<bool>,
 }
 
 pub struct ApplyObj {
@@ -135,11 +136,29 @@ impl Program {
   }
 }
 
+// FIXME: optimize (has been modified to support matching on SUPs)
 pub fn get_var(heap: &Heap, term: Ptr, var: &RuleVar) -> Ptr {
   let RuleVar { param, field, erase: _ } = var;
   match field {
-    Some(i) => take_arg(heap, load_arg(heap, term, *param), *i),
-    None    => take_arg(heap, term, *param),
+    Some(i) => {
+      let ctr = load_arg(heap, term, *param);
+      // Converts a Superposition into an HVM.SUP constructor
+      if get_tag(ctr) == SUP {
+        //println!("extract: {}", i);
+        if *i == 0 {
+          let lab = get_ext(ctr);
+          let lab = if lab < 0x8000000 { lab + 0x8000000 } else { lab - 0x8000000 };
+          U6O(lab)
+        } else {
+          take_arg(heap, ctr, *i - 1)
+        }
+      } else {
+        take_arg(heap, ctr, *i)
+      }
+    }
+    None => {
+      take_arg(heap, term, *param)
+    }
   }
 }
 
@@ -168,7 +187,6 @@ pub fn alloc_body(heap: &Heap, prog: &Program, tid: usize, term: Ptr, vars: &[Ru
   // FIXME: verify the use of get_unchecked
   unsafe {
     let (cell, nodes, dupk) = body;
-    //println!("ALLOC_BODY {}", *dupk);
     let aloc = &heap.aloc[tid];
     let lvar = &heap.lvar[tid];
     for i in 0 .. nodes.len() {
@@ -222,7 +240,11 @@ pub fn build_function(book: &language::rulebook::RuleBook, fn_name: &str, rules:
         match &**arg {
           language::syntax::Term::Ctr { name, args } => {
             cond.push(Ctr(*book.name_to_id.get(&*name).unwrap_or(&0), 0));
-            free.push((i as u64, args.len() as u64));
+            if name == "HVM.SUP" {
+              free.push((i as u64, 2));
+            } else {
+              free.push((i as u64, args.len() as u64));
+            }
             for (j, arg) in args.iter().enumerate() {
               if let language::syntax::Term::Var { ref name } = **arg {
                 vars.push(RuleVar { param: i as u64, field: Some(j as u64), erase: name == "*" });
@@ -244,7 +266,7 @@ pub fn build_function(book: &language::rulebook::RuleBook, fn_name: &str, rules:
             inps.push(name.clone());
           }
           _ => {
-            panic!("invalid left-hand side.");
+            panic!("Invalid left-hand side.");
           }
         }
       }
@@ -260,8 +282,10 @@ pub fn build_function(book: &language::rulebook::RuleBook, fn_name: &str, rules:
 
   let fnid = book.name_to_id.get(fn_name).unwrap();
   let smap = book.id_to_smap.get(fnid).unwrap().clone().into_boxed_slice();
+  let pmap = book.id_to_pmap.get(fnid).unwrap().clone().into_boxed_slice();
 
   let strict_map = smap.to_vec();
+  let superp_map = pmap.to_vec();
   let mut strict_idx = Vec::new();
   for (i, is_strict) in smap.iter().enumerate() {
     if *is_strict {
@@ -271,7 +295,7 @@ pub fn build_function(book: &language::rulebook::RuleBook, fn_name: &str, rules:
 
   Function::Interpreted {
     smap,
-    visit: VisitObj { strict_map, strict_idx },
+    visit: VisitObj { superp_map, strict_map, strict_idx },
     apply: ApplyObj { rules: dynrules },
   }
 }

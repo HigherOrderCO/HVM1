@@ -54,8 +54,15 @@ pub fn apply(ctx: ReduceCtx, fid: u64, visit: &VisitObj, apply: &ApplyObj) -> bo
   for (n, is_strict) in visit.strict_map.iter().enumerate() {
     let n = n as u64;
     if *is_strict && get_tag(load_arg(ctx.heap, ctx.term, n)) == SUP {
-      superpose(ctx.heap, &ctx.prog.aris, ctx.tid, *ctx.host, ctx.term, load_arg(ctx.heap, ctx.term, n), n);
-      return true;
+      //if let Some(func_name) = ctx.prog.nams.get(&fid) {
+        //println!("SUPERPOSING arg={} of fid={} ({}) | {}", n, fid, func_name, visit.superp_map[n as usize]);
+      //} else {
+        //println!("SUPERPOSING arg={} of fid={}", n, fid);
+      //}
+      if !visit.superp_map[n as usize] {
+        superpose(ctx.heap, &ctx.prog.aris, ctx.tid, *ctx.host, ctx.term, load_arg(ctx.heap, ctx.term, n), n);
+        return true;
+      }
     }
   }
 
@@ -80,9 +87,20 @@ pub fn apply(ctx: ReduceCtx, fid: u64, visit: &VisitObj, apply: &ApplyObj) -> bo
           matched = matched && same_tag && same_val;
         }
         CTR => {
-          let same_tag = get_tag(load_arg(ctx.heap, ctx.term, i)) == CTR || get_tag(load_arg(ctx.heap, ctx.term, i)) == FUN;
-          let same_ext = get_ext(load_arg(ctx.heap, ctx.term, i)) == get_ext(*cond);
-          matched = matched && same_tag && same_ext;
+          if get_ext(*cond) == HVM_SUP {
+            let is_sup = get_tag(load_arg(ctx.heap, ctx.term, i)) == SUP;
+            //println!("... matching a superposition {} {:x} {} {:x} | {}",
+              //get_tag(load_arg(ctx.heap, ctx.term, i)),
+              //get_ext(load_arg(ctx.heap, ctx.term, i)),
+              //get_tag(*cond),
+              //get_ext(*cond),
+              //is_sup);
+            matched = matched && is_sup;
+          } else {
+            let same_tag = get_tag(load_arg(ctx.heap, ctx.term, i)) == CTR || get_tag(load_arg(ctx.heap, ctx.term, i)) == FUN;
+            let same_ext = get_ext(load_arg(ctx.heap, ctx.term, i)) == get_ext(*cond);
+            matched = matched && same_tag && same_ext;
+          }
         }
         //FUN => {
           //let same_tag = get_tag(load_arg(ctx.heap, ctx.term, i)) == CTR || get_tag(load_arg(ctx.heap, ctx.term, i)) == FUN;
@@ -99,7 +117,8 @@ pub fn apply(ctx: ReduceCtx, fid: u64, visit: &VisitObj, apply: &ApplyObj) -> bo
               // Matches number literals
               let is_num
                 =  get_tag(load_arg(ctx.heap, ctx.term, i)) == U60
-                || get_tag(load_arg(ctx.heap, ctx.term, i)) == F60;
+                || get_tag(load_arg(ctx.heap, ctx.term, i)) == F60
+                || get_tag(load_arg(ctx.heap, ctx.term, i)) == SUP;
 
               // Matches constructor labels
               let is_ctr
@@ -119,7 +138,8 @@ pub fn apply(ctx: ReduceCtx, fid: u64, visit: &VisitObj, apply: &ApplyObj) -> bo
               let is_ctr = get_tag(load_arg(ctx.heap, ctx.term, i)) == CTR;
               let is_u60 = get_tag(load_arg(ctx.heap, ctx.term, i)) == U60;
               let is_f60 = get_tag(load_arg(ctx.heap, ctx.term, i)) == F60;
-              matched = matched && (is_ctr || is_u60 || is_f60);
+              let is_sup = get_tag(load_arg(ctx.heap, ctx.term, i)) == SUP;
+              matched = matched && (is_ctr || is_u60 || is_f60 || is_sup);
             }
           }
         }

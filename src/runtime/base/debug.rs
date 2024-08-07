@@ -152,10 +152,10 @@ pub fn show_at(heap: &Heap, prog: &Program, host: u64, tlocs: &[AtomicU64]) -> S
           format!("({} {})", func, argm)
         }
         SUP => {
-          //let kind = get_ext(term);
+          let kind = get_ext(term);
           let func = go(heap, prog, get_loc(term, 0), names, tlocs);
           let argm = go(heap, prog, get_loc(term, 1), names, tlocs);
-          format!("{{{} {}}}", func, argm)
+          format!("#{:x}{{{} {}}}", kind, func, argm)
         }
         OP2 => {
           let oper = get_ext(term);
@@ -211,11 +211,11 @@ pub fn show_at(heap: &Heap, prog: &Program, host: u64, tlocs: &[AtomicU64]) -> S
   for (_key, pos) in itertools::sorted(lets.iter()) {
     // todo: reverse
     let what = String::from("?h");
-    //let kind = kinds.get(&pos).unwrap_or(&0);
+    let kind = kinds.get(&pos).unwrap_or(&0);
     let name = names.get(&pos).unwrap_or(&what);
     let nam0 = if load_ptr(heap, pos + 0) == Era() { String::from("*") } else { format!("a{}", name) };
     let nam1 = if load_ptr(heap, pos + 1) == Era() { String::from("*") } else { format!("b{}", name) };
-    text.push_str(&format!("\ndup {} {} = {};", nam0, nam1, go(heap, prog, pos + 2, &names, tlocs)));
+    text.push_str(&format!("\ndup #{:x}{{{} {}}} = {};", kind, nam0, nam1, go(heap, prog, pos + 2, &names, tlocs)));
   }
   text
 }
